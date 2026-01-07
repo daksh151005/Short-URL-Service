@@ -8,3 +8,7 @@
 - [x] Create simple HTML frontend in templates/index.html
 - [x] Test the app locally
 - [x] Prepare for Render deployment (add runtime.txt if needed)
+- [ ] Add custom short codes (user-defined)
+- [ ] Add expiry date for URLs
+- [ ] Show click analytics (clicks over time chart)
+- [ ] Add QR code generation for short URLs

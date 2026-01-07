@@ -5,33 +5,121 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>URL Shortener</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; }
         form { margin-bottom: 20px; }
-        input { padding: 10px; width: 300px; }
-        button { padding: 10px; }
-        #result { margin-top: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, button { padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        input[type="url"], input[type="text"], input[type="number"] { width: calc(100% - 22px); }
+        button { background-color: #28a745; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #218838; }
+        #result { margin-top: 20px; padding: 10px; border-radius: 4px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .url-list { margin-top: 30px; }
+        .url-item { border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .url-item a { color: #007bff; text-decoration: none; }
+        .url-item a:hover { text-decoration: underline; }
+        .stats { font-size: 0.9em; color: #666; }
+        .qr-code { margin-top: 10px; }
     </style>
 </head>
 <body>
-    <h1>URL Shortener</h1>
-    <form id="shortenForm">
-        <input type="url" id="urlInput" placeholder="Enter URL to shorten" required>
-        <button type="submit">Shorten</button>
-    </form>
-    <div id="result"></div>
+    <div class="container">
+        <h1>URL Shortener</h1>
+        <form id="shortenForm">
+            <div class="form-group">
+                <label for="urlInput">Original URL:</label>
+                <input type="url" id="urlInput" placeholder="Enter URL to shorten" required>
+            </div>
+            <div class="form-group">
+                <label for="customCode">Custom Short Code (optional):</label>
+                <input type="text" id="customCode" placeholder="Leave blank for auto-generated">
+            </div>
+            <div class="form-group">
+                <label for="expiryDays">Expiry Days (optional):</label>
+                <input type="number" id="expiryDays" placeholder="Leave blank for no expiry" min="1">
+            </div>
+            <button type="submit">Shorten URL</button>
+        </form>
+        <div id="result"></div>
+
+        <div class="url-list">
+            <h2>All Shortened URLs</h2>
+            <div id="urlList"></div>
+        </div>
+    </div>
 
     <script>
+        async function loadUrls() {
+            try {
+                const response = await fetch('/urls');
+                const urls = await response.json();
+                const urlList = document.getElementById('urlList');
+                urlList.innerHTML = urls.map(url => `
+                    <div class="url-item">
+                        <p><strong>Original:</strong> <a href="${url.original_url}" target="_blank">${url.original_url}</a></p>
+                        <p><strong>Short:</strong> <a href="${window.location.origin}/${url.short_code}" target="_blank">${window.location.origin}/${url.short_code}</a></p>
+                        <p class="stats">Clicks: ${url.clicks} | Created: ${new Date(url.created_at).toLocaleDateString()}</p>
+                        ${url.expiry_date ? `<p class="stats">Expires: ${new Date(url.expiry_date).toLocaleString()}</p>` : ''}
+                        <div style="display: flex; justify-content: space-between;">
+                            <button onclick="showStats('${url.short_code}')">View Detailed Stats</button>
+                            <button onclick="generateQR('${url.short_code}')">Generate QR Code</button>
+                        </div>
+                        <div id="qr-${url.short_code}" class="qr-code"></div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading URLs:', error);
+            }
+        }
+
         document.getElementById('shortenForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const url = document.getElementById('urlInput').value;
+            const customCode = document.getElementById('customCode').value;
+            const expiryDays = document.getElementById('expiryDays').value;
+
+            const data = { url };
+            if (customCode) data.custom_code = customCode;
+            if (expiryDays) data.expiry_days = parseInt(expiryDays);
+
             const response = await fetch('/shorten', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url })
+                body: JSON.stringify(data)
             });
-            const data = await response.json();
-            document.getElementById('result').innerHTML = response.ok ? `<p>Short URL: <a href="${data.short_url}" target="_blank">${data.short_url}</a></p>` : `<p>Error: ${data.error}</p>`;
+            const result = await response.json();
+            const resultDiv = document.getElementById('result');
+            if (response.ok) {
+                resultDiv.className = 'success';
+                resultDiv.innerHTML = `<p>Short URL: <a href="${result.short_url}" target="_blank">${result.short_url}</a></p>`;
+                loadUrls(); // Refresh the list
+            } else {
+                resultDiv.className = 'error';
+                resultDiv.innerHTML = `<p>Error: ${result.error}</p>`;
+            }
         });
+
+        async function showStats(shortCode) {
+            const response = await fetch(`/stats/${shortCode}`);
+            const stats = await response.json();
+            if (response.ok) {
+                alert(`Stats for ${shortCode}:\nClicks: ${stats.clicks}\nCreated: ${new Date(stats.created_at).toLocaleString()}\nExpiry: ${stats.expiry_date ? new Date(stats.expiry_date).toLocaleString() : 'No expiry'}\nClick History: ${stats.clicks_history.length} entries`);
+            } else {
+                alert('Error fetching stats');
+            }
+        }
+
+        async function generateQR(shortCode) {
+            const qrDiv = document.getElementById(`qr-${shortCode}`);
+            qrDiv.innerHTML = `<img src="/qr/${shortCode}" alt="QR Code for ${shortCode}">`;
+        }
+
+        // Load URLs on page load
+        loadUrls();
     </script>
 </body>
 </html>
